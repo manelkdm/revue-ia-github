@@ -1,46 +1,81 @@
-name: Preuves de la Pull Request
+name: Revue de la Pull Request
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, edited, converted_to_draft]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Numéro de la PR à revoir
+        required: true
+        type: string
 
-# Ce job n'a aucun jeton OpenProject ni accès à Ollama.
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 concurrency:
-  group: evidence-${{ github.event.pull_request.number }}
+  group: review-${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: true
 
 jobs:
   collect-evidence:
+    name: Contrôles du prototype
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'pull_request' &&
+       !github.event.pull_request.draft &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       (github.event.action != 'edited' || github.event.changes.body || github.event.changes.title))
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      COVERAGE_SOURCE: ${{ vars.REVIEW_COVERAGE_SOURCE || 'example_app' }}
-      SCAN_PATH: ${{ vars.REVIEW_SCAN_PATH || 'example_app' }}
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
+      head: ${{ steps.pr.outputs.head }}
+      base: ${{ steps.pr.outputs.base }}
+      attempt: ${{ github.run_attempt }}
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
     steps:
-      - name: Lire le collecteur approuvé sur la branche cible
-        uses: actions/checkout@v4
+      - name: Vérifier la PR et retenir ses commits
+        id: pr
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          script: |
+            const number = Number(process.env.PR_NUMBER);
+            if (!Number.isSafeInteger(number) || number <= 0) throw new Error('Numéro de PR invalide');
+            const { data: pr } = await github.rest.pulls.get({...context.repo, pull_number: number});
+            const repository = context.repo.owner + '/' + context.repo.repo;
+            if (pr.state !== 'open' || pr.draft || pr.head.repo?.full_name.toLowerCase() !== repository.toLowerCase())
+              throw new Error('La PR doit être ouverte, prête et issue du même dépôt');
+            if (context.payload.pull_request && context.payload.pull_request.head.sha !== pr.head.sha)
+              throw new Error('Le commit a changé : utiliser la dernière exécution');
+            core.setOutput('number', number);
+            core.setOutput('head', pr.head.sha);
+            core.setOutput('base', pr.base.sha);
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.base }}
           path: trusted
           persist-credentials: false
-      - name: Lire le commit exact de la Pull Request
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.head }}
           path: target
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Préparer les outils approuvés
+      - name: Installer le collecteur et ses outils
         run: |
           python -m pip install ./trusted
           docker build -f trusted/Dockerfile.runner -t revue-ia-runner:local trusted
-      - name: Exécuter les analyseurs dans le conteneur jetable
+      - name: Contrôler uniquement le prototype, sans réseau ni secrets
+        env:
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
           test "$(git -C target rev-parse HEAD)" = "$PR_HEAD_SHA"
           mkdir -p runner-output
@@ -50,21 +85,122 @@ jobs:
             --tmpfs /tmp:rw,nosuid,size=2g \
             --mount "type=bind,src=$GITHUB_WORKSPACE/target,dst=/source,readonly" \
             --mount "type=bind,src=$GITHUB_WORKSPACE/runner-output,dst=/out" \
-            --env "COVERAGE_SOURCE=$COVERAGE_SOURCE" \
-            --env "SCAN_PATH=$SCAN_PATH" \
             revue-ia-runner:local sh -c \
-            'cp -R /source /tmp/repo && python scripts/collect_evidence.py --repo /tmp/repo --out /out/evidence.json --run-tests --coverage-source "$COVERAGE_SOURCE" --scan-path "$SCAN_PATH"'
-      - name: Valider le format et le commit des preuves
+            'cp -R /source /tmp/repo && python scripts/collect_evidence.py --repo /tmp/repo --out /out/evidence.json --run-tests --scan-path example_app --coverage-source example_app --test-path tests/test_calculator.py'
+      - name: Valider les preuves et enregistrer leur provenance
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head }}
+          PR_BASE_SHA: ${{ steps.pr.outputs.base }}
         run: |
           python -m review.ci normalize --input runner-output/evidence.json \
-            --head "$PR_HEAD_SHA" --output artifacts/evidence.json
-      - name: Conserver les preuves pour les sept agents
-        uses: actions/upload-artifact@v4
+            --head "$PR_HEAD_SHA" --output artifacts/evidence.json \
+            --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --base "$PR_BASE_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@v4
+        id: evidence
         with:
-          name: review-evidence-${{ github.event.pull_request.head.sha }}
+          name: preuves-${{ steps.pr.outputs.head }}-${{ github.run_attempt }}
           path: artifacts/evidence.json
           if-no-files-found: error
           retention-days: 7
-      - name: Appliquer les critères de contrôle
+      - name: Résultat des contrôles
+        env:
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head }}
+        run: python -m review.ci gate --input artifacts/evidence.json --head "$PR_HEAD_SHA"
+
+  ai-review:
+    name: Revue IA consultative
+    needs: collect-evidence
+    # Un contrôle en échec reste analysable : ses preuves ont déjà été conservées.
+    if: ${{ !cancelled() && needs.collect-evidence.outputs.artifact_id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PR_NUMBER: ${{ needs.collect-evidence.outputs.pr }}
+      PR_HEAD_SHA: ${{ needs.collect-evidence.outputs.head }}
+      PR_BASE_SHA: ${{ needs.collect-evidence.outputs.base }}
+      EVIDENCE_ATTEMPT: ${{ needs.collect-evidence.outputs.attempt }}
+      OLLAMA_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: qwen2.5-coder:7b
+      OLLAMA_TIMEOUT: '900'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.collect-evidence.outputs.base }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ./trusted
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.collect-evidence.outputs.artifact_id }}
+          path: evidence
+          merge-multiple: true
+      - name: Vérifier la provenance avant utilisation
+        id: verify
         run: |
-          python -m review.ci gate --input artifacts/evidence.json --head "$PR_HEAD_SHA"
+          python -m review.ci verify --input evidence/evidence.json --head "$PR_HEAD_SHA" \
+            --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --base "$PR_BASE_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$EVIDENCE_ATTEMPT"
+      - name: Démarrer Ollama et télécharger le modèle
+        id: ollama
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          mkdir -p reports
+          start=$SECONDS
+          docker run -d --name revue-ollama -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$OLLAMA_URL/api/version" > /dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent "$OLLAMA_URL/api/version"
+          docker exec revue-ollama ollama pull "$OLLAMA_MODEL"
+          echo "Préparation Ollama : $((SECONDS - start)) secondes" > reports/durees.txt
+      - name: Produire les rapports avec les sept agents
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p reports
+          (
+            while true; do
+              date -u +%FT%TZ
+              docker stats --no-stream --format '{{.MemUsage}}' revue-ollama || true
+              sleep 10
+            done
+          ) > reports/memoire-ollama.txt 2>&1 &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          start=$SECONDS
+          set +e
+          python -m review.cli review --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" \
+            --evidence evidence/evidence.json --expected-head "$PR_HEAD_SHA" --expected-base "$PR_BASE_SHA" \
+            --standards trusted/examples/STANDARDS.md --out reports
+          status=$?
+          set -e
+          echo "Revue : $((SECONDS - start)) secondes ; code de sortie : $status" >> reports/durees.txt
+          exit "$status"
+      - name: Conserver les rapports, même incomplets
+        if: ${{ always() && steps.verify.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: revue-${{ needs.collect-evidence.outputs.head }}-${{ github.run_attempt }}
+          path: |
+            reports/
+            evidence/evidence.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Résumé de l'exécution
+        if: ${{ always() }}
+        env:
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          OLLAMA_OUTCOME: ${{ steps.ollama.outcome }}
+        run: |
+          echo "## Revue IA consultative" >> "$GITHUB_STEP_SUMMARY"
+          echo "PR $PR_NUMBER — commit $PR_HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Préparation Ollama : $OLLAMA_OUTCOME ; revue : $REVIEW_OUTCOME." >> "$GITHUB_STEP_SUMMARY"
+          echo "Les rapports disponibles sont dans les fichiers téléchargeables de cette exécution. Aucun commentaire publié." >> "$GITHUB_STEP_SUMMARY"

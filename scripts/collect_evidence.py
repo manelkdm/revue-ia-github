@@ -17,12 +17,14 @@ from review.security import redact
 
 
 def command(argv, cwd, timeout=180, extra_env=None):
-    env = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")}
+    env = {k: v for k, v in os.environ.items() if k.upper() in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR", "TEMP", "TMP")}
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     env.update(extra_env or {})
     try:
-        result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=False)
+        result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=timeout, check=False)
         return result.returncode, result.stdout, result.stderr
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return 127, "", type(exc).__name__
@@ -58,11 +60,14 @@ def test_counts(xml_text):
     return len(cases), sum(c.find("failure") is not None or c.find("error") is not None for c in cases), sum(c.find("skipped") is not None for c in cases)
 
 
-def collect(repo, run_tests=False, coverage_source=".", scan_path="."):
+def collect(repo, run_tests=False, coverage_source=".", scan_path=".", test_path="tests/test_calculator.py"):
     repo = repo.resolve()
     target = (repo / scan_path).resolve()
     if not target.is_relative_to(repo) or not target.is_dir():
         raise ValueError("Le dossier d'analyse doit exister à l'intérieur du dépôt")
+    tests = (repo / test_path).resolve()
+    if run_tests and (not tests.is_relative_to(repo) or not tests.is_file()):
+        raise ValueError("Le fichier de tests doit exister à l'intérieur du dépôt")
     sha = git_state(repo)
     tools = {}
     coverage, counts = None, (0, 0, 0)
@@ -89,28 +94,29 @@ def collect(repo, run_tests=False, coverage_source=".", scan_path="."):
         except (ValueError, KeyError, TypeError):
             tools["bandit"] = ToolResult(status="error", details="Bandit absent, en erreur ou résultat invalide")
         config = work / "gitleaks.toml"
-        config.write_text("[extend]\nuseDefault = true\n")
+        config.write_text("[extend]\nuseDefault = true\n", encoding="utf-8")
         ignore = work / "gitleaksignore"
-        ignore.write_text("")
+        ignore.write_text("", encoding="utf-8")
         output = work / "gitleaks.json"
-        code, _, _ = command(["gitleaks", "dir", str(repo), "--config", str(config), "--gitleaks-ignore-path", str(ignore), "--redact=100", "--no-banner", "--report-format", "json", "--report-path", str(output)], work)
+        code, _, _ = command(["gitleaks", "dir", str(target), "--config", str(config), "--gitleaks-ignore-path", str(ignore), "--redact=100", "--no-banner", "--report-format", "json", "--report-path", str(output)], work)
         try:
             if code not in (0, 1):
                 raise ValueError()
-            rows = json.loads(output.read_text())
-            findings = [finding(f"Gitleaks {r['RuleID']}", "Secret potentiel détecté ; valeur volontairement omise.", "high", r["File"], r["StartLine"]) for r in rows[:100]]
+            rows = json.loads(output.read_text(encoding="utf-8"))
+            findings = [finding(f"Gitleaks {r['RuleID']}", "Secret potentiel détecté ; valeur volontairement omise.",
+                                "high", location(target / r["File"], repo), r["StartLine"]) for r in rows[:100]]
             tools["gitleaks"] = ToolResult(status="failed" if code or rows else "passed", findings=findings, total_findings=len(rows))
         except (ValueError, KeyError, TypeError, OSError):
             tools["gitleaks"] = ToolResult(status="error", details="Gitleaks absent, en erreur ou résultat invalide")
         tools["pytest"] = ToolResult(status="not_run", details="Activer --run-tests uniquement dans un environnement isolé")
         if run_tests:
             junit, cov = work / "junit.xml", work / "coverage.json"
-            code, _, _ = command([sys.executable, "-m", "pytest", "-p", "pytest_cov", "-p", "no:cacheprovider", "--junitxml=" + str(junit), "--cov=" + coverage_source, "--cov-report=json:" + str(cov)], repo, 300, {"COVERAGE_FILE": str(work / ".coverage")})
+            code, _, _ = command([sys.executable, "-m", "pytest", str(tests), "-p", "pytest_cov", "-p", "no:cacheprovider", "--junitxml=" + str(junit), "--cov=" + coverage_source, "--cov-report=json:" + str(cov)], repo, 300, {"COVERAGE_FILE": str(work / ".coverage")})
             try:
-                counts = test_counts(junit.read_text())
+                counts = test_counts(junit.read_text(encoding="utf-8"))
                 if code not in (0, 1):
                     raise ValueError()
-                coverage = float(json.loads(cov.read_text())["totals"]["percent_covered"])
+                coverage = float(json.loads(cov.read_text(encoding="utf-8"))["totals"]["percent_covered"])
                 tools["pytest"] = ToolResult(status="failed" if code or counts[1] else "passed", total_findings=counts[1], details=f"{counts[0]} cas, {counts[1]} échecs, {counts[2]} ignorés")
             except (ValueError, KeyError, TypeError, OSError, ET.ParseError):
                 tools["pytest"] = ToolResult(status="error", details=f"Rapports absents ou invalides, ou code pytest {code}")
@@ -126,10 +132,11 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--run-tests", action="store_true")
     parser.add_argument("--coverage-source", default=".")
+    parser.add_argument("--test-path", default="tests/test_calculator.py")
     parser.add_argument("--scan-path", default=".", help="Dossier de code à analyser avec Ruff et Bandit, relatif au dépôt")
     args = parser.parse_args()
     if args.out.resolve().is_relative_to(args.repo.resolve()):
         raise SystemExit("Écrire evidence.json en dehors du dépôt analysé")
-    result = collect(args.repo, args.run_tests, args.coverage_source, args.scan_path)
+    result = collect(args.repo, args.run_tests, args.coverage_source, args.scan_path, args.test_path)
     args.out.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     print(args.out)

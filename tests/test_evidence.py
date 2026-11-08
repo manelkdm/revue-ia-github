@@ -1,11 +1,12 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from review.models import Evidence
-from review.watch import fingerprint
-from test_review import context
 
 spec = importlib.util.spec_from_file_location("collector", Path(__file__).resolve().parents[1] / "scripts" / "collect_evidence.py")
 collector = importlib.util.module_from_spec(spec)
@@ -13,6 +14,15 @@ spec.loader.exec_module(collector)
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_command_preserves_unicode_and_windows_temp_environment(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"TEMP": tmp, "TMP": tmp}):
+            code, out, err = collector.command(
+                [sys.executable, "-c", "import json, os; print(json.dumps([os.environ['TEMP'], os.environ['TMP'], '\\u00e9\\u6f22'], ensure_ascii=False))"],
+                Path(tmp),
+            )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out), [tmp, tmp, "é漢"])
+
     def test_junit_counts_do_not_double_count_suites(self):
         xml = '<testsuites tests="3"><testsuite tests="3"><testcase/><testcase><failure/></testcase><testcase><skipped/></testcase></testsuite></testsuites>'
         self.assertEqual(collector.test_counts(xml), (3, 1, 1))
@@ -32,36 +42,44 @@ class EvidenceTests(unittest.TestCase):
             if argv[0] == "bandit":
                 return 0, '{"results": [], "errors": []}', ""
             if argv[0] == "gitleaks":
-                Path(argv[argv.index("--report-path") + 1]).write_text('[]')
-                return 0, "", ""
+                self.assertEqual(Path(argv[2]).name, "example_app")
+                Path(argv[argv.index("--report-path") + 1]).write_text(
+                    '[{"RuleID":"example", "File":"calculator.py", "StartLine":1}]', encoding="utf-8")
+                return 1, "", ""
             junit = next(x.split("=", 1)[1] for x in argv if x.startswith("--junitxml="))
+            self.assertEqual(Path(argv[3]), cwd / "tests" / "test_calculator.py")
             cov = next(x.split(":", 1)[1] for x in argv if x.startswith("--cov-report="))
-            Path(junit).write_text('<testsuites><testsuite><testcase/></testsuite></testsuites>')
-            Path(cov).write_text('{"totals":{"percent_covered": 88.5}}')
+            Path(junit).write_text('<testsuites><testsuite><testcase name="é漢"/></testsuite></testsuites>', encoding="utf-8")
+            Path(cov).write_text('{"totals":{"percent_covered": 88.5}}', encoding="utf-8")
             self.assertIn("COVERAGE_FILE", extra_env)
             return 0, "", ""
-        with patch.object(collector, "git_state", return_value="a" * 40), patch.object(collector, "command", side_effect=fake_command):
-            result = collector.collect(Path("/tmp"), True)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(collector, "git_state", return_value="a" * 40), patch.object(collector, "command", side_effect=fake_command):
+            repo = Path(tmp)
+            (repo / "example_app").mkdir()
+            (repo / "tests").mkdir()
+            (repo / "tests/test_calculator.py").write_text("", encoding="utf-8")
+            result = collector.collect(repo, True, coverage_source="example_app", scan_path="example_app")
         self.assertEqual(result.coverage_percent, 88.5)
         self.assertEqual(result.tests_run, 1)
         self.assertEqual(result.tools["ruff"].status, "failed")
         self.assertEqual(result.tools["bandit"].status, "passed")
-        self.assertEqual(result.tools["gitleaks"].status, "passed")
+        self.assertEqual(result.tools["gitleaks"].status, "failed")
+        self.assertEqual(Path(result.tools["gitleaks"].findings[0].file), Path("example_app/calculator.py"))
 
     def test_absent_tools_are_errors_not_success(self):
-        with patch.object(collector, "git_state", return_value="a" * 40), patch.object(collector, "command", return_value=(127, "", "not found")):
-            result = collector.collect(Path("/tmp"))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(collector, "git_state", return_value="a" * 40), patch.object(collector, "command", return_value=(127, "", "not found")):
+            result = collector.collect(Path(tmp))
         self.assertEqual(result.tools["ruff"].status, "error")
         self.assertEqual(result.tools["bandit"].status, "error")
         self.assertEqual(result.tools["gitleaks"].status, "error")
         self.assertEqual(result.tools["pytest"].status, "not_run")
 
-    def test_watch_changes_with_commit(self):
-        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(head_sha="c" * 40), "m"))
-        self.assertEqual(fingerprint(context(), "m"), fingerprint(context(), "m"))
-
-    def test_watch_changes_with_ticket(self):
-        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(ticket_description="Nouveau besoin"), "m"))
+    def test_external_or_missing_test_path_refused(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(collector, "command") as command:
+            for path in ("../outside.py", "missing.py"):
+                with self.assertRaisesRegex(ValueError, "fichier de tests"):
+                    collector.collect(Path(tmp), True, test_path=path)
+            command.assert_not_called()
 
 
 if __name__ == "__main__":

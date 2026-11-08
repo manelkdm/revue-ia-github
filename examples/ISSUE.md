@@ -1,5 +1,7 @@
 # Division sûre
 
+Exemple de description d'issue GitHub. Dans la PR, indiquer `Issue liée : #42` en remplaçant 42 par son numéro.
+
 En tant qu'utilisateur de la calculatrice, je veux recevoir une erreur compréhensible
 lorsque je divise par zéro, afin de corriger ma saisie.
 

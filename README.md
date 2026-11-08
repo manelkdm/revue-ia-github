@@ -1,47 +1,50 @@
 # Revue de code avec GitHub et sept agents IA
 
-Version 0.2.0 : GitHub pour les dépôts et Pull Requests, OpenProject pour les tickets, Ollama pour le modèle local et sept agents Python pour la revue.
+Version 0.3.0 : une PR GitHub, une issue facultative pour les exigences, et Ollama pour les analyses. Les rapports sont en français.
 
-Commencez par **GUIDE.html**, lisible dans un navigateur, ou par **[le guide détaillé](docs/GUIDE.md)**. Le guide contient l'installation en quatorze étapes et le code des sept agents. Les détails des workflows sont dans **[GitHub Actions](docs/GITHUB_ACTIONS.md)**.
+Les sept agents restent spécialisés : exigences, code, qualité, conformité, tests, sécurité, puis synthèse. Le dernier propose les regroupements de constats similaires. Le rapport final présente une seule liste, en conservant les preuves, les sources et la gravité la plus élevée. Les détails des sept analyses restent dans le JSON.
 
-## Essai immédiat sans GitHub ni modèle
+## Essai sans GitHub ni modèle
 
-```bash
-git clone https://github.com/dkodio/revue-ia-github.git
-cd revue-ia-github
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-python -m unittest discover -s tests -v
-python -m review.cli demo
+Depuis le dépôt, avec Python installé :
+
+```powershell
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -e .
+./.venv/Scripts/python.exe -m unittest discover -s tests -v
+./.venv/Scripts/python.exe -m review.cli demo
 ```
 
-Le rapport simulé est enregistré dans `runs/IDENTIFIANT/`. Aucun service distant n'est contacté.
+Sur Linux, remplacer `.venv/Scripts/python.exe` par `.venv/bin/python`.
 
-## Mode réel
+La simulation crée `runs/IDENTIFIANT/review.json` et `report.md`. Elle ne contacte aucun service.
 
-```bash
-python scripts/init_env.py
-# Renseigner les jetons dans .env, puis démarrer OpenProject et Ollama.
-python -m review.cli review --ticket 42 --repo dkodio/revue-ia-github --pr 1 \
-  --evidence /CHEMIN/evidence.json --standards examples/STANDARDS.md
-python -m review.cli publish runs/IDENTIFIANT/review.json
+## Revue réelle
+
+Copier `.env.example` vers `.env` et renseigner `GITHUB_TOKEN`. Démarrer Ollama et télécharger `qwen2.5-coder:7b`.
+
+Dans la description de la PR, ajouter facultativement :
+
+```text
+Issue liée : #42
 ```
 
-Le dépôt est `dkodio/revue-ia-github`. Remplacez les numéros de ticket et de Pull Request par les vôtres. Les publications sont explicites ; le code ne fusionne aucune PR.
+L'issue doit appartenir au même dépôt. Sa description fait autorité pour les exigences. Sans issue, le rapport le signale et la revue du code et des tests continue.
 
-## Contenu livré
+```powershell
+./.venv/Scripts/python.exe -m review.cli review --repo PROPRIETAIRE/DEPOT --pr 1 --standards examples/STANDARDS.md
+```
 
-- `review/agents/agent1_requirements.py` à `agent7_synthesis.py` : code des sept agents.
-- `review/connectors.py` : API GitHub et OpenProject.
-- `review/orchestrator.py`, `llm.py`, `models.py` : orchestration, Ollama et contrats JSON.
-- `.github/workflows/tests.yml` : tests du robot sur GitHub Actions.
-- `.github/workflows/evidence.yml` : contrôles et artefact associé au SHA exact de la PR.
-- `.github/pull_request_template.md` : modèle de Pull Request.
-- `scripts/collect_evidence.py`, `Dockerfile.runner`, `review/ci.py` : collecte et validation des preuves.
-- `example_app/` et `tests/test_calculator.py` : application de démonstration et trois cas de test.
-- `review/watch.py` : surveillance locale d'une PR GitHub.
-- `dashboard.py` : tableau de bord local optionnel.
-- `docs/VALIDATION.md` : vérifications réalisées et limites.
+Ajouter `--evidence CHEMIN/evidence.json` pour intégrer des résultats de contrôles correspondant au commit. Sans preuves, les tests et la couverture sont indiqués comme inconnus.
 
-Les workflows sont conçus pour ce dépôt, avec le robot à la racine de la branche cible. Pour une autre application, adaptez les chemins et les dépendances selon le guide. Le transfert des preuves GitHub Actions vers le robot local reste manuel. La présence du code sur GitHub ne démarre pas OpenProject ni Ollama : suivez le guide pour installer ces services et renseigner vos jetons locaux.
+La revue réelle ne publie rien automatiquement. La commande manuelle `publish` ajoute un commentaire GitHub ; la mise à jour automatique d'un commentaire unique reste prévue à l'étape 4.
+
+## Périmètre actuel
+
+- Analyse du diff uniquement, limitée à 45 000 caractères. Au-delà, rapport IA incomplet ; preuves d'outils conservées.
+- Rapport consultatif, aucune fusion automatique.
+- Fichiers JSON/Markdown uniquement : pas de tableau de bord, de base SQLite ni de surveillance périodique.
+- Un seul job de tests GitHub sur Ubuntu avec Python 3.12.
+- Workflow de revue Ollama préparé dans Actions : contrôles du prototype, puis rapports téléchargeables. La première exécution réelle reste à valider ; aucun commentaire automatique pour le moment.
+
+Voir le [guide](docs/GUIDE.md), les [workflows](docs/GITHUB_ACTIONS.md), les [vérifications](docs/VALIDATION.md) et le [plan](DEVELOPMENT_PLAN.md).

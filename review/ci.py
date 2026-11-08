@@ -4,10 +4,10 @@ import os
 from pathlib import Path
 import re
 import stat
-from .models import Evidence
+from .models import Evidence, Provenance
 
 
-def read_evidence(path: Path, expected_sha: str | None = None) -> Evidence:
+def read_evidence(path: Path, expected_sha: str | None = None, expected_provenance: Provenance | None = None) -> Evidence:
     if expected_sha is not None and not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
         raise ValueError("SHA attendu invalide")
     if path.is_symlink():
@@ -26,10 +26,12 @@ def read_evidence(path: Path, expected_sha: str | None = None) -> Evidence:
         raise ValueError("Schéma des preuves invalide") from None
     if expected_sha is not None and evidence.head_sha != expected_sha:
         raise ValueError("Les preuves ne correspondent pas au commit attendu")
+    if expected_provenance is not None and evidence.provenance != expected_provenance:
+        raise ValueError("La provenance des preuves ne correspond pas à cette exécution")
     return evidence
 
 
-def gate(evidence: Evidence, minimum_coverage: float = 80) -> list[str]:
+def gate(evidence: Evidence, minimum_coverage: float | None = None) -> list[str]:
     issues = []
     for name in ("ruff", "bandit", "gitleaks", "pytest"):
         tool = evidence.tools.get(name)
@@ -37,24 +39,42 @@ def gate(evidence: Evidence, minimum_coverage: float = 80) -> list[str]:
             issues.append(f"{name} : contrôle absent, incomplet ou avec constats")
     if evidence.tests_run - evidence.tests_skipped <= 0 or evidence.tests_failed:
         issues.append("Tests absents, tous ignorés ou en échec")
-    if evidence.coverage_percent is None or evidence.coverage_percent < minimum_coverage:
+    if evidence.coverage_percent is None:
+        issues.append("Couverture inconnue")
+    elif minimum_coverage is not None and evidence.coverage_percent < minimum_coverage:
         issues.append(f"Couverture inconnue ou inférieure à {minimum_coverage:g} %")
     return issues
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("normalize", "gate"))
+    parser.add_argument("command", choices=("normalize", "verify", "gate"))
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--repo")
+    parser.add_argument("--pr", type=int)
+    parser.add_argument("--base")
+    parser.add_argument("--run-id", type=int)
+    parser.add_argument("--run-attempt", type=int)
     args = parser.parse_args()
     try:
-        evidence = read_evidence(args.input, args.head)
+        provenance = None
+        if any(value is not None for value in (args.repo, args.pr, args.base, args.run_id, args.run_attempt)):
+            provenance = Provenance(repository=args.repo, pr=args.pr, base_sha=args.base,
+                                    run_id=args.run_id, run_attempt=args.run_attempt)
+        if args.command == "verify" and provenance is None:
+            raise ValueError("La provenance attendue est obligatoire")
+        evidence = read_evidence(args.input, args.head, provenance if args.command == "verify" else None)
+        if args.command == "verify":
+            print("Provenance et commit des preuves vérifiés.")
+            return 0
         if args.command == "normalize":
             if not args.output:
                 parser.error("normalize demande --output")
             args.output.parent.mkdir(parents=True, exist_ok=True)
+            # La provenance est attribuée hors du conteneur, jamais reprise de ses données.
+            evidence.provenance = provenance
             args.output.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
             print("Preuves structurées et commit vérifiés. Ceci n'atteste pas leur authenticité.")
             return 0

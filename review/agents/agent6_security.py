@@ -1,5 +1,5 @@
 """Agent 6 : analyse de sécurité, Bandit et Gitleaks."""
-from .common import analyze, code_payload, append_tools
+from .common import analyze, code_payload, note_tools
 
 
 def run(context, model):
@@ -8,6 +8,6 @@ def run(context, model):
     result = analyze(model, 6,
         "Cherche injections, absence de contrôle d'accès, validation d'entrée et exposition de secrets. "
         "Ne fournis que les emplacements de secrets, jamais leur valeur. "
-        "Signale les limites du diff. Ne recopie pas Bandit/Gitleaks dans findings, ils seront ajoutés. "
+        "Signale les limites du diff. Ne recopie pas Bandit/Gitleaks dans findings, ils figurent séparément dans le rapport. "
         "Une absence de constat ne prouve pas la sécurité de l'application.", payload)
-    return append_tools(result, context, ["bandit", "gitleaks"])
+    return note_tools(result, context, ["bandit", "gitleaks"])
