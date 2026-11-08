@@ -60,11 +60,14 @@ def test_counts(xml_text):
     return len(cases), sum(c.find("failure") is not None or c.find("error") is not None for c in cases), sum(c.find("skipped") is not None for c in cases)
 
 
-def collect(repo, run_tests=False, coverage_source=".", scan_path="."):
+def collect(repo, run_tests=False, coverage_source=".", scan_path=".", test_path="tests/test_calculator.py"):
     repo = repo.resolve()
     target = (repo / scan_path).resolve()
     if not target.is_relative_to(repo) or not target.is_dir():
         raise ValueError("Le dossier d'analyse doit exister à l'intérieur du dépôt")
+    tests = (repo / test_path).resolve()
+    if run_tests and (not tests.is_relative_to(repo) or not tests.is_file()):
+        raise ValueError("Le fichier de tests doit exister à l'intérieur du dépôt")
     sha = git_state(repo)
     tools = {}
     coverage, counts = None, (0, 0, 0)
@@ -95,19 +98,20 @@ def collect(repo, run_tests=False, coverage_source=".", scan_path="."):
         ignore = work / "gitleaksignore"
         ignore.write_text("", encoding="utf-8")
         output = work / "gitleaks.json"
-        code, _, _ = command(["gitleaks", "dir", str(repo), "--config", str(config), "--gitleaks-ignore-path", str(ignore), "--redact=100", "--no-banner", "--report-format", "json", "--report-path", str(output)], work)
+        code, _, _ = command(["gitleaks", "dir", str(target), "--config", str(config), "--gitleaks-ignore-path", str(ignore), "--redact=100", "--no-banner", "--report-format", "json", "--report-path", str(output)], work)
         try:
             if code not in (0, 1):
                 raise ValueError()
             rows = json.loads(output.read_text(encoding="utf-8"))
-            findings = [finding(f"Gitleaks {r['RuleID']}", "Secret potentiel détecté ; valeur volontairement omise.", "high", r["File"], r["StartLine"]) for r in rows[:100]]
+            findings = [finding(f"Gitleaks {r['RuleID']}", "Secret potentiel détecté ; valeur volontairement omise.",
+                                "high", location(target / r["File"], repo), r["StartLine"]) for r in rows[:100]]
             tools["gitleaks"] = ToolResult(status="failed" if code or rows else "passed", findings=findings, total_findings=len(rows))
         except (ValueError, KeyError, TypeError, OSError):
             tools["gitleaks"] = ToolResult(status="error", details="Gitleaks absent, en erreur ou résultat invalide")
         tools["pytest"] = ToolResult(status="not_run", details="Activer --run-tests uniquement dans un environnement isolé")
         if run_tests:
             junit, cov = work / "junit.xml", work / "coverage.json"
-            code, _, _ = command([sys.executable, "-m", "pytest", "-p", "pytest_cov", "-p", "no:cacheprovider", "--junitxml=" + str(junit), "--cov=" + coverage_source, "--cov-report=json:" + str(cov)], repo, 300, {"COVERAGE_FILE": str(work / ".coverage")})
+            code, _, _ = command([sys.executable, "-m", "pytest", str(tests), "-p", "pytest_cov", "-p", "no:cacheprovider", "--junitxml=" + str(junit), "--cov=" + coverage_source, "--cov-report=json:" + str(cov)], repo, 300, {"COVERAGE_FILE": str(work / ".coverage")})
             try:
                 counts = test_counts(junit.read_text(encoding="utf-8"))
                 if code not in (0, 1):
@@ -128,10 +132,11 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--run-tests", action="store_true")
     parser.add_argument("--coverage-source", default=".")
+    parser.add_argument("--test-path", default="tests/test_calculator.py")
     parser.add_argument("--scan-path", default=".", help="Dossier de code à analyser avec Ruff et Bandit, relatif au dépôt")
     args = parser.parse_args()
     if args.out.resolve().is_relative_to(args.repo.resolve()):
         raise SystemExit("Écrire evidence.json en dehors du dépôt analysé")
-    result = collect(args.repo, args.run_tests, args.coverage_source, args.scan_path)
+    result = collect(args.repo, args.run_tests, args.coverage_source, args.scan_path, args.test_path)
     args.out.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     print(args.out)

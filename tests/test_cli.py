@@ -11,6 +11,17 @@ from test_review import github
 
 
 class CliTests(unittest.TestCase):
+    def test_changed_workflow_commits_refuse_model_and_report(self):
+        for flag in ("--expected-head", "--expected-base"):
+            with tempfile.TemporaryDirectory() as tmp:
+                args = ["review", "--env", str(Path(tmp) / "absent.env"), "review",
+                        "--repo", "team/calculator", "--pr", "1", "--out", tmp, flag, "c" * 40]
+                with patch("sys.argv", args), patch("review.cli.github_client", return_value=github()), \
+                        patch("review.cli.Ollama") as model, contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(), 2)
+                model.assert_not_called()
+                self.assertFalse(list(Path(tmp).glob("*/review.json")))
+
     def test_review_without_ticket_writes_complete_report(self):
         git = github()
         with tempfile.TemporaryDirectory() as tmp:

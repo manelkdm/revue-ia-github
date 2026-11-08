@@ -45,6 +45,6 @@ La revue réelle ne publie rien automatiquement. La commande manuelle `publish` 
 - Rapport consultatif, aucune fusion automatique.
 - Fichiers JSON/Markdown uniquement : pas de tableau de bord, de base SQLite ni de surveillance périodique.
 - Un seul job de tests GitHub sur Ubuntu avec Python 3.12.
-- Automatisation des appels Ollama dans Actions à réaliser à l'étape 3.
+- Workflow de revue Ollama préparé dans Actions : contrôles du prototype, puis rapports téléchargeables. La première exécution réelle reste à valider ; aucun commentaire automatique pour le moment.
 
 Voir le [guide](docs/GUIDE.md), les [workflows](docs/GITHUB_ACTIONS.md), les [vérifications](docs/VALIDATION.md) et le [plan](DEVELOPMENT_PLAN.md).

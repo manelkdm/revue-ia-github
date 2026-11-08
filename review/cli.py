@@ -39,6 +39,8 @@ def main():
     review.add_argument("--repo", required=True)
     review.add_argument("--pr", type=int, required=True)
     review.add_argument("--evidence", type=Path)
+    review.add_argument("--expected-head", help="Commit de PR attendu par le workflow")
+    review.add_argument("--expected-base", help="Commit de base attendu par le workflow")
     review.add_argument("--standards", type=Path)
     review.add_argument("--out", type=Path, default=Path("runs"))
     pub = sub.add_parser("publish", help="Ajouter manuellement un commentaire de synthèse GitHub")
@@ -56,6 +58,9 @@ def main():
                 evidence = read_evidence(args.evidence) if args.evidence else None
                 standards = args.standards.read_text(encoding="utf-8") if args.standards else ""
                 context = fetch_context(git, args.repo, args.pr, standards, evidence)
+                if ((args.expected_head and context.head_sha != args.expected_head) or
+                        (args.expected_base and context.base_sha != args.expected_base)):
+                    raise ValueError("Les commits ont changé depuis le début du workflow ; relancer la revue")
                 model = Ollama(os.getenv("OLLAMA_URL", "http://localhost:11434"),
                                os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
                                int(os.getenv("OLLAMA_TIMEOUT", "300")))

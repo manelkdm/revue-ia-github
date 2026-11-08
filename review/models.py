@@ -41,9 +41,18 @@ class ToolResult(StrictModel):
     total_findings: int = Field(default=0, ge=0)
 
 
+class Provenance(StrictModel):
+    repository: str
+    pr: int = Field(gt=0)
+    base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    run_id: int = Field(gt=0)
+    run_attempt: int = Field(gt=0)
+
+
 class Evidence(StrictModel):
     head_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     generated_at: str
+    provenance: Provenance | None = None
     tools: dict[str, ToolResult]
     coverage_percent: float | None = Field(default=None, ge=0, le=100)
     tests_run: int = Field(default=0, ge=0)

@@ -1,35 +1,63 @@
 # Les workflows GitHub Actions
 
-## Tests du programme
+## Ce qui se passe
 
-`.github/workflows/tests.yml` reste simple : un job sur `ubuntu-latest`, avec Python 3.12.
+Le workflow de tests du programme reste inchangé : **un job Ubuntu avec Python 3.12**, qui installe le projet, lance les tests puis la démonstration.
 
-Il récupère le dépôt, installe Python et le projet, exécute les tests unitaires, puis lance la démonstration simulée. Il se déclenche sur les mises à jour de `main`, sur les PR et manuellement. Il ne lance pas Ollama et ne publie pas de commentaire.
+Le workflow **Revue de la Pull Request** (`evidence.yml`) comporte deux parties :
 
-## Collecte des preuves existante
+1. **Contrôles du prototype** : Ruff, Bandit et Gitleaks analysent `example_app` ; pytest exécute `tests/test_calculator.py` et mesure sa couverture.
+2. **Revue IA consultative** : Ollama télécharge `qwen2.5-coder:7b`, les sept agents analysent le diff et les preuves, puis les rapports sont enregistrés.
 
-`.github/workflows/evidence.yml` prépare le collecteur depuis le commit de la branche cible, puis examine le commit exact de la PR. Les outils tournent dans un conteneur sans réseau et sans jeton transmis aux tests.
+Un contrôle en échec peut donc être expliqué par les agents. Une panne du modèle reste distincte du résultat des contrôles. **Aucun commentaire n'est publié automatiquement à cette étape.**
 
-Le collecteur produit des résultats Ruff, Bandit, Gitleaks, pytest et couverture. Le fichier est validé et conservé dans l'artefact `review-evidence-SHA` avant le contrôle final. Un contrôle absent, en erreur, avec constats, ou des tests absents/échoués rendent ce contrôle final non réussi. La couverture doit être connue ; aucun seuil minimal n'est actuellement imposé par défaut.
+## Quand la revue démarre
 
-Les chemins actuels sont configurés par `REVIEW_SCAN_PATH` et `REVIEW_COVERAGE_SOURCE`, tous deux à `example_app` par défaut. **La collecte existante découvre encore tous les tests et Gitleaks parcourt tout le dépôt.** Le recentrage complet sur l'application prototype appartient à l'étape 3.
+- PR ouverte ou rouverte, nouveau commit, sortie du mode brouillon.
+- Modification du titre ou de la description.
+- Relance manuelle avec un numéro de PR.
 
-Ruff utilise les règles `E4,E7,E9,F`, pas l'ensemble des règles PEP 8. Les preuves portent un SHA mais ne sont pas une attestation d'authenticité ; vérifier leur provenance et la pertinence des tests.
+Les brouillons, PR fermées et PR provenant d'un fork sont exclus. Un passage en brouillon annule une revue en cours. Les modifications de l'issue liée nécessitent une relance manuelle.
 
-## Utiliser les preuves localement
+Pour une relance : dans l'onglet **Actions**, sélectionner **Revue de la Pull Request**, puis **Run workflow**, choisir la branche par défaut et indiquer le numéro de PR.
 
-Télécharger l'artefact du bon commit, puis :
+## Où lire le résultat
 
-```text
-python -m review.cli review --repo PROPRIETAIRE/DEPOT --pr 1 --evidence CHEMIN/evidence.json
-```
+Ouvrir l'exécution dans **Actions**, puis télécharger ses fichiers :
 
-Le programme refuse un SHA différent de celui de la PR.
+- `preuves-COMMIT-TENTATIVE` contient les résultats des contrôles.
+- `revue-COMMIT-TENTATIVE` contient les rapports disponibles, les preuves, `durees.txt` et `memoire-ollama.txt`.
 
-## Prochaines étapes
+Le fichier `report.md` est le rapport lisible ; `review.json` conserve le détail des sept agents. La mémoire d'Ollama est échantillonnée pendant la revue ; ce n'est pas une mesure exacte de son pic.
 
-L'étape 3 ajoutera la revue réelle avec Ollama dans Actions. L'étape 4 ajoutera la publication automatique dans un commentaire unique, avec vérification des données et protection contre les résultats périmés.
+Si le modèle échoue, les agents concernés sont marqués incomplets. Si le contexte GitHub ne peut pas être lu, si les preuves sont invalides ou si le délai global expire, il peut ne pas y avoir de rapport : consulter alors le résumé et les journaux du job.
 
-Le code de la PR ne doit pas être exécuté dans le job disposant du droit de publier. Les tests du reviewer restent indépendants des avis consultatifs de l'IA.
+## Premier essai à effectuer
 
-L'exécution distante de ces workflows reste à vérifier dans le dépôt GitHub.
+**Ce workflow est préparé, mais son exécution réelle reste à valider.** Il faut d'abord intégrer ces changements sur la branche cible : le reviewer utilisé vient volontairement de cette branche, pas de la PR en cours d'analyse.
+
+Ensuite :
+
+1. Ouvrir une petite PR sur `example_app` dans le même dépôt.
+2. Ajouter facultativement `Issue liée : #NUMERO` dans sa description.
+3. Vérifier les deux parties de l'exécution et télécharger le rapport.
+4. Confirmer que le rapport concerne le bon commit, contient les sept résultats et regroupe les répétitions.
+5. Examiner la durée et la mémoire avant d'ajuster le contexte ou la sortie du modèle.
+
+Aucun jeton personnel ni installation locale d'Ollama n'est nécessaire pour ce workflow : il utilise le jeton temporaire de GitHub en lecture et démarre Ollama sur son runner Ubuntu.
+
+## Protections conservées
+
+Le collecteur et le reviewer proviennent du commit de la branche cible. Les tests de la PR tournent dans un conteneur sans réseau et sans secrets. Le job IA ne récupère pas et n'exécute pas le code de la PR : il lit le diff via GitHub.
+
+Les preuves sont récupérées par leur identifiant d'artefact dans la même exécution. Leur dépôt, PR, commit de tête/base, exécution et tentative sont contrôlés avant utilisation. Cette provenance ne prouve pas que les tests écrits dans la PR sont pertinents.
+
+Ruff garde `E4,E7,E9,F`. Les outils absents/en erreur, les constats, les tests absents/échoués et la couverture inconnue rendent le contrôle non réussi. Aucun seuil minimal de couverture n'est imposé pour le moment.
+
+La préparation d'Ollama est bornée à 30 minutes, chaque requête à 900 secondes et le job IA à 240 minutes : ce sont des limites d'exécution, pas des objectifs de performance. Les mesures du premier essai permettront de les ajuster.
+
+Si des contrôles obligatoires sont configurés dans GitHub, utiliser **Contrôles du prototype** et les tests du programme ; la **Revue IA consultative** ne doit pas devenir une condition obligatoire de fusion.
+
+La publication et la mise à jour d'un commentaire unique restent prévues à l'étape 4.
+
+Références : [déclencheurs GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), [Ollama dans Docker](https://docs.ollama.com/docker).

@@ -1,5 +1,17 @@
 # Vérifications et limites du prototype
 
+## Étape 3 : raccordement à GitHub Actions
+
+Vérification locale : **76 tests, 75 réussis et un ignoré** (privilège Windows pour les liens symboliques). Le YAML et la syntaxe Bash des commandes du workflow ont été vérifiés.
+
+Les nouveaux tests vérifient le périmètre du prototype, le refus d'un fichier de tests extérieur/absent, les chemins des constats Gitleaks, la provenance des preuves (dépôt, PR, base, exécution et tentative), et le refus de lancer le modèle si les commits attendus ont changé. La normalisation remplace la provenance déclarée par le conteneur par celle du workflow.
+
+**L'exécution réelle dans Actions reste à faire.** Docker n'est pas installé localement ; Ollama est présent avec le modèle 14b, mais le modèle prévu est 7b. Aucun autre modèle n'a été substitué. Aucun jeton GitHub n'est configuré dans l'environnement ou le fichier de configuration de cette session pour appeler Actions.
+
+Les changements doivent d'abord être intégrés à la branche cible, utilisée comme source du reviewer. Le premier essai doit produire les rapports, vérifier les sept agents et les regroupements, puis examiner les durées et les échantillons de mémoire. Les échantillons toutes les dix secondes ne constituent pas une mesure exacte du pic mémoire.
+
+Une panne de téléchargement/démarrage d'Ollama permet quand même de tenter la production d'un rapport incomplet. Un échec de récupération du contexte GitHub, des preuves invalides ou l'expiration du délai global peuvent empêcher la production d'un rapport ; l'échec du job doit alors rester visible. Ne pas confondre validation locale et validation de ce parcours distant.
+
 ## Étape 2 : sept agents et rapport sans répétitions
 
 Vérification locale sous Windows, Python 3.14.6 et Pydantic 2.14.1 : **72 tests, dont 71 réussis et un ignoré**. Le test ignoré nécessite le droit Windows de créer un lien symbolique.

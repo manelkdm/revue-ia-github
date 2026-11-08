@@ -1,4 +1,5 @@
 import io
+import contextlib
 import json
 from pathlib import Path
 import tempfile
@@ -6,8 +7,8 @@ import unittest
 from unittest.mock import Mock, patch
 from review.connectors import GitHub
 from review.cli import github_client
-from review.ci import gate, read_evidence
-from review.models import Review
+from review.ci import gate, read_evidence, main as ci_main
+from review.models import Review, Provenance
 from review.orchestrator import run
 from review.llm import DemoModel
 from review.publish import publish
@@ -65,6 +66,40 @@ class GitHubTests(unittest.TestCase):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_normalize_replaces_claimed_provenance_and_verify_checks_it(self):
+        provenance = Provenance(repository="team/calculator", pr=1, base_sha="b" * 40,
+                                run_id=123, run_attempt=1)
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw.json"
+            output = Path(tmp) / "normalized.json"
+            raw.write_text(clean_evidence(provenance=provenance.model_copy(update={"run_id": 999})).model_dump_json(), encoding="utf-8")
+            options = ["--head", "a" * 40, "--repo", "team/calculator", "--pr", "1", "--base", "b" * 40,
+                       "--run-id", "123", "--run-attempt", "1"]
+            with patch("sys.argv", ["ci", "normalize", "--input", str(raw), "--output", str(output), *options]), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ci_main(), 0)
+            self.assertEqual(read_evidence(output).provenance, provenance)
+            with patch("sys.argv", ["ci", "verify", "--input", str(output), *options]), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ci_main(), 0)
+
+    def test_provenance_must_match_repository_pr_base_run_and_attempt(self):
+        provenance = Provenance(repository="team/calculator", pr=1, base_sha="b" * 40,
+                                run_id=123, run_attempt=1)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "evidence.json"
+            evidence = clean_evidence(provenance=provenance)
+            path.write_text(evidence.model_dump_json(), encoding="utf-8")
+            self.assertEqual(read_evidence(path, "a" * 40, provenance).provenance, provenance)
+            for change in ({"repository": "other/repo"}, {"pr": 2}, {"base_sha": "c" * 40},
+                           {"run_id": 124}, {"run_attempt": 2}):
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, "provenance"):
+                    read_evidence(path, "a" * 40, provenance.model_copy(update=change))
+            evidence.provenance = None
+            path.write_text(evidence.model_dump_json(), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "provenance"):
+                read_evidence(path, "a" * 40, provenance)
+
     def test_valid_evidence_for_exact_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"
