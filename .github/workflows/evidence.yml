@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Ce job n'a aucun jeton OpenProject ni accès à Ollama.
+# Ce job ne transmet aucun secret aux tests et n'appelle pas Ollama.
 permissions:
   contents: read
 

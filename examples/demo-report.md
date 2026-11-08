@@ -1,109 +1,53 @@
-# Rapport de revue de code
+# Revue de code
 
-Exécution : `e6250f15787c48e9883788e6de3c890b`
-
-Dépôt : demo/calculatrice · PR 1 · OpenProject 42
-
+Dépôt : demo/calculator · PR #1
 Commit analysé : `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 
-**Recommandation : revue_humaine_requise**
+**Revue humaine requise** — avis consultatif, validation humaine obligatoire.
+Analyse IA : terminée.
 
-Une personne doit vérifier les preuves et prendre la décision finale. Aucune fusion automatique.
+**DÉMONSTRATION SIMULÉE — aucun modèle ni outil réel exécuté.**
 
-**DÉMONSTRATION SIMULÉE — aucun modèle ni outil d'analyse exécuté.**
-
-## Motifs
-
-- Démonstration simulée : aucune revue réelle\.
-- Critères d'acceptation absents ou partiellement inconnus\.
-- Preuve ruff absente ou inexploitable\.
-- Preuve pytest absente ou inexploitable\.
-- Preuve bandit absente ou inexploitable\.
-- Preuve gitleaks absente ou inexploitable\.
-- Couverture inconnue\.
-- Aucun test effectivement exécuté\.
-
-## Contrôles déterministes
-
-| Outil | État | Nombre de constats |
-|---|---|---:|
-| ruff | not_run | inconnu |
-| pytest | not_run | inconnu |
-| bandit | not_run | inconnu |
-| gitleaks | not_run | inconnu |
-
-Couverture de lignes : inconnue
-
-## Agent 1
-
-État : complete
-
-Démonstration de l'agent 1\. Aucun modèle exécuté\.
-
-
-| Critère | État | Preuve |
-|---|---|---|
-| CA\-1 Le diviseur zéro déclenche ValueError | unknown | Simulation : pas de preuve d'exécution |
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-
-## Agent 2
-
-État : complete
-
-Démonstration de l'agent 2\. Aucun modèle exécuté\.
-
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-
-## Agent 3
-
-État : complete
-
-Démonstration de l'agent 3\. Aucun modèle exécuté\.
-
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-- Limite : ruff non exécuté ou en erreur\.
-
-## Agent 4
-
-État : complete
-
-Démonstration de l'agent 4\. Aucun modèle exécuté\.
-
-
-| Critère | État | Preuve |
-|---|---|---|
-| CA\-1 Le diviseur zéro déclenche ValueError | unknown | Simulation : pas de preuve d'exécution |
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-
-## Agent 5
-
-État : complete
-
-Démonstration de l'agent 5\. Aucun modèle exécuté\.
-
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-
-## Agent 6
-
-État : complete
-
-Démonstration de l'agent 6\. Aucun modèle exécuté\.
-
-
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
-- Limite : bandit non exécuté ou en erreur\.
-- Limite : gitleaks non exécuté ou en erreur\.
-
-## Agent 7
-
-État : complete
+## Synthèse
 
 Démonstration de l'agent 7\. Aucun modèle exécuté\.
 
+## Contrôles
 
-- Limite : Sortie fictive destinée à tester le fonctionnement du pipeline\.
+| Outil | État | Constats |
+|---|---|---:|
+| ruff | non exécuté | inconnu |
+| pytest | non exécuté | inconnu |
+| bandit | non exécuté | inconnu |
+| gitleaks | non exécuté | inconnu |
+
+Couverture de lignes : inconnue.
+
+## Constats regroupés
+
+Aucun constat fourni ; cela ne garantit pas l'absence de problème.
+
+## Exigences
+
+- CA\-1 : Le diviseur zéro déclenche ValueError — inconnu
+  Preuve : Simulation : aucune preuve d'exécution\.
+
+## Agents
+
+| Agent | État |
+|---|---|
+| 1 | terminé |
+| 2 | terminé |
+| 3 | terminé |
+| 4 | terminé |
+| 5 | terminé |
+| 6 | terminé |
+| 7 | terminé |
+
+## Limites
+
+- Analyse du diff uniquement : fichiers inchangés, binaires et contexte du dépôt non inspectés\.
+- Sortie fictive destinée à tester le fonctionnement du pipeline\.
+- ruff non exécuté ou en erreur\.
+- bandit non exécuté ou en erreur\.
+- gitleaks non exécuté ou en erreur\.

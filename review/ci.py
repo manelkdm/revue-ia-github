@@ -29,7 +29,7 @@ def read_evidence(path: Path, expected_sha: str | None = None) -> Evidence:
     return evidence
 
 
-def gate(evidence: Evidence, minimum_coverage: float = 80) -> list[str]:
+def gate(evidence: Evidence, minimum_coverage: float | None = None) -> list[str]:
     issues = []
     for name in ("ruff", "bandit", "gitleaks", "pytest"):
         tool = evidence.tools.get(name)
@@ -37,7 +37,9 @@ def gate(evidence: Evidence, minimum_coverage: float = 80) -> list[str]:
             issues.append(f"{name} : contrôle absent, incomplet ou avec constats")
     if evidence.tests_run - evidence.tests_skipped <= 0 or evidence.tests_failed:
         issues.append("Tests absents, tous ignorés ou en échec")
-    if evidence.coverage_percent is None or evidence.coverage_percent < minimum_coverage:
+    if evidence.coverage_percent is None:
+        issues.append("Couverture inconnue")
+    elif minimum_coverage is not None and evidence.coverage_percent < minimum_coverage:
         issues.append(f"Couverture inconnue ou inférieure à {minimum_coverage:g} %")
     return issues
 

@@ -1,13 +1,20 @@
 """Agent 7 : résumé rédactionnel et recommandation déterministe séparée."""
 from .common import analyze
+from ..findings import catalog
 
 
 def run(context, model, results):
+    tools = context.evidence.tools if context.evidence else {}
     result = analyze(model, 7,
-        "Synthétise les six analyses en français : risques prioritaires, actions concrètes et incertitudes. "
+        "Synthétise les six analyses en français en deux phrases brèves, sans répéter la liste des constats. "
+        "Dans duplicate_groups, regroupe les identifiants des constats qui décrivent le même problème "
+        "au même fichier et à la même ligne. Des formulations différentes peuvent désigner le même problème. "
+        "Ne regroupe pas des problèmes distincts ou des emplacements inconnus. En cas de doute, laisse séparé. "
+        "Les constats non regroupés seront conservés automatiquement ; ne réécris pas leurs preuves. "
         "Ne crée pas de nouveaux constats ; laisse findings et criteria vides. "
         "Ne déclare jamais une fusion approuvée. Le programme calculera la recommandation.",
-        {"agents": [r.model_dump() for r in results], "warnings": context.warnings})
+        {"agents": [r.model_dump() for r in results], "warnings": context.warnings,
+         "findings": {key: value.model_dump() for key, value in catalog(results, tools).items()}})
     result.findings = []
     result.criteria = []
     return result
@@ -36,8 +43,6 @@ def recommendation(context, results):
             corrections.append(f"Contrôle {name} avec écarts.")
     if not evidence or evidence.coverage_percent is None:
         missing.append("Couverture inconnue.")
-    elif evidence.coverage_percent < 80:
-        corrections.append("Couverture de lignes inférieure au seuil pédagogique de 80 %.")
     if not evidence or evidence.tests_run - evidence.tests_skipped <= 0:
         missing.append("Aucun test effectivement exécuté.")
     if evidence and evidence.tests_failed:

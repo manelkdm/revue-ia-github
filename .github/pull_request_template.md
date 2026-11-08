@@ -1,20 +1,16 @@
-## Ticket OpenProject
+Issue liée :
 
-Identifiant numérique :
-Lien du ticket :
+<!-- Facultatif : indiquer #42 ou l'URL d'une issue du même dépôt sur la ligne ci-dessus.
+La description de l'issue fait autorité pour les exigences. Sans issue, la revue du code continue. -->
 
-## Besoin et critères d'acceptation
+## Description
 
-- CA-1 :
-- CA-2 :
+Décrire brièvement la modification et son objectif.
 
 ## Vérifications
 
-- [ ] Les tests correspondent au commit de cette Pull Request.
+- [ ] Les tests correspondent au commit de cette PR.
 - [ ] Les constats des outils ont été corrigés ou examinés.
-- [ ] Le rapport des agents a été relu par une personne.
-- [ ] Aucun secret n'a été ajouté au dépôt.
+- [ ] Aucun secret n'a été ajouté.
 
-## Décision humaine
-
-Une approbation humaine est nécessaire avant la fusion.
+Une personne doit relire les preuves et approuver la PR.

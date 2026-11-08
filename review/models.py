@@ -31,6 +31,7 @@ class AgentResult(StrictModel):
     findings: list[Finding] = Field(default_factory=list, max_length=160)
     criteria: list[Criterion] = Field(default_factory=list, max_length=40)
     limitations: list[str] = Field(default_factory=list, max_length=30)
+    duplicate_groups: list[list[str]] = Field(default_factory=list, max_length=160)
 
 
 class ToolResult(StrictModel):
@@ -56,16 +57,20 @@ class Evidence(StrictModel):
         return self
 
 
+class Issue(StrictModel):
+    number: int = Field(gt=0)
+    title: str
+    body: str
+
+
 class Context(StrictModel):
-    ticket_id: int = Field(gt=0)
-    ticket_subject: str
-    ticket_description: str
-    ticket_updated_at: str
     repository: str
     pr: int = Field(gt=0)
     head_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     pr_title: str
+    pr_body: str = ""
+    issue: Issue | None = None
     diff: str
     standards: str = ""
     evidence: Evidence | None = None
@@ -74,23 +79,38 @@ class Context(StrictModel):
 
 
 class Review(StrictModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     forge: Literal["github"] = "github"
     run_id: str
     created_at: str
     model: str
     demo: bool
-    ticket_id: int
-    ticket_updated_at: str
     repository: str
     pr: int
     head_sha: str
     base_sha: str
+    source_digest: str
     input_digest: str
-    results: list[AgentResult]
+    results: list[AgentResult] = Field(min_length=7, max_length=7)
+    finding_groups: list[list[str]]
     decision: Literal["corrections_recommandees", "revue_humaine_requise", "pret_pour_validation_humaine"]
     reasons: list[str]
     tools: dict[str, ToolResult]
     coverage_percent: float | None
     warnings: list[str]
     human_approval_required: Literal[True] = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def supported_version(cls, data):
+        if isinstance(data, dict) and data.get("schema_version") != 3:
+            raise ValueError("Version de rapport incompatible ; relancez la revue avec le schéma 3.")
+        return data
+
+    @model_validator(mode="after")
+    def seven_agents(self):
+        if [result.agent for result in self.results] != list(range(1, 8)):
+            raise ValueError("Le rapport doit contenir les sept agents dans l'ordre")
+        from .findings import catalog, validate_groups
+        validate_groups(catalog(self.results, self.tools), self.finding_groups)
+        return self

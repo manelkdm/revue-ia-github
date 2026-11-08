@@ -5,14 +5,13 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from review.connectors import GitHub
-from review.cli import clients
+from review.cli import github_client
 from review.ci import gate, read_evidence
 from review.models import Review
 from review.orchestrator import run
 from review.llm import DemoModel
 from review.publish import publish
-from test_review import context, clean_evidence
-import test_review
+from test_review import context, clean_evidence, github
 
 
 class GitHubTests(unittest.TestCase):
@@ -48,21 +47,20 @@ class GitHubTests(unittest.TestCase):
         self.assertEqual(dict((k.lower(), v) for k, v in request.header_items())["accept"], "application/vnd.github+json")
 
     def test_clients_default_github_url(self):
-        with patch.dict("os.environ", {"OPENPROJECT_URL": "http://localhost:8080", "OPENPROJECT_TOKEN": "op-test", "GITHUB_TOKEN": "gh-test"}, clear=True):
-            op, github = clients()
-            self.assertEqual(github.http.base, "https://api.github.com")
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "gh-test"}, clear=True):
+            self.assertEqual(github_client().http.base, "https://api.github.com")
 
     def test_old_report_version_is_rejected(self):
         data = run(context(demo=True), DemoModel()).model_dump()
-        data["schema_version"] = 1
-        with self.assertRaises(ValueError):
+        data["schema_version"] = 2
+        with self.assertRaisesRegex(ValueError, "incompatible"):
             Review.model_validate(data)
 
     def test_github_publication_journal(self):
-        op, github = test_review.ConnectorTests().clients()
+        git = github()
         with tempfile.TemporaryDirectory() as tmp:
             journal = Path(tmp) / "publication.json"
-            publish(run(context(), DemoModel()), op, github, journal)
+            publish(run(context(), DemoModel()), git, journal)
             self.assertEqual(json.loads(journal.read_text(encoding="utf-8"))["github"], "sent")
 
 
@@ -111,6 +109,11 @@ class ArtifactTests(unittest.TestCase):
 
     def test_clean_gate(self):
         self.assertEqual(gate(clean_evidence()), [])
+
+    def test_coverage_threshold_is_explicit(self):
+        evidence = clean_evidence(coverage_percent=20)
+        self.assertEqual(gate(evidence), [])
+        self.assertTrue(gate(evidence, minimum_coverage=80))
 
     def test_missing_tool_fails_gate(self):
         evidence = clean_evidence()

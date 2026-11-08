@@ -1,17 +1,16 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "forge": "github",
-  "run_id": "e6250f15787c48e9883788e6de3c890b",
-  "created_at": "2026-10-05T01:18:03.662835+00:00",
+  "run_id": "e92995a9224b4119be4286f56127e82a",
+  "created_at": "2026-11-08T22:32:27.077293+00:00",
   "model": "simulation-sans-modele",
   "demo": true,
-  "ticket_id": 42,
-  "ticket_updated_at": "2026-10-04T00:00:00Z",
-  "repository": "demo/calculatrice",
+  "repository": "demo/calculator",
   "pr": 1,
   "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "input_digest": "403a70c7f840b48adc727976cc8c5884350eac0f6e4c24c4a83ed77ac2d5fa89",
+  "source_digest": "ba8530beff226b64f91782975baf7e40f019f5ecc8fc03edaf69ac727bd9a974",
+  "input_digest": "b980b3d7903ae0a2955a46384a704fe55ccd7ce7e79a4dffb38b20c0df5fef15",
   "results": [
     {
       "agent": 1,
@@ -23,12 +22,13 @@
           "id": "CA-1",
           "text": "Le diviseur zéro déclenche ValueError",
           "status": "unknown",
-          "evidence": "Simulation : pas de preuve d'exécution"
+          "evidence": "Simulation : aucune preuve d'exécution."
         }
       ],
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 2,
@@ -38,7 +38,8 @@
       "criteria": [],
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 3,
@@ -49,7 +50,8 @@
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline.",
         "ruff non exécuté ou en erreur."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 4,
@@ -61,12 +63,13 @@
           "id": "CA-1",
           "text": "Le diviseur zéro déclenche ValueError",
           "status": "unknown",
-          "evidence": "Simulation : pas de preuve d'exécution"
+          "evidence": "Simulation : aucune preuve d'exécution."
         }
       ],
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 5,
@@ -76,7 +79,8 @@
       "criteria": [],
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 6,
@@ -88,7 +92,8 @@
         "Sortie fictive destinée à tester le fonctionnement du pipeline.",
         "bandit non exécuté ou en erreur.",
         "gitleaks non exécuté ou en erreur."
-      ]
+      ],
+      "duplicate_groups": []
     },
     {
       "agent": 7,
@@ -98,9 +103,11 @@
       "criteria": [],
       "limitations": [
         "Sortie fictive destinée à tester le fonctionnement du pipeline."
-      ]
+      ],
+      "duplicate_groups": []
     }
   ],
+  "finding_groups": [],
   "decision": "revue_humaine_requise",
   "reasons": [
     "Démonstration simulée : aucune revue réelle.",
@@ -110,10 +117,13 @@
     "Preuve bandit absente ou inexploitable.",
     "Preuve gitleaks absente ou inexploitable.",
     "Couverture inconnue.",
-    "Aucun test effectivement exécuté."
+    "Aucun test effectivement exécuté.",
+    "Analyse du diff uniquement : fichiers inchangés, binaires et contexte du dépôt non inspectés."
   ],
   "tools": {},
   "coverage_percent": null,
-  "warnings": [],
+  "warnings": [
+    "Analyse du diff uniquement : fichiers inchangés, binaires et contexte du dépôt non inspectés."
+  ],
   "human_approval_required": true
 }

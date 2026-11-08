@@ -7,8 +7,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from review.models import Evidence
-from review.watch import fingerprint
-from test_review import context
 
 spec = importlib.util.spec_from_file_location("collector", Path(__file__).resolve().parents[1] / "scripts" / "collect_evidence.py")
 collector = importlib.util.module_from_spec(spec)
@@ -67,13 +65,6 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result.tools["bandit"].status, "error")
         self.assertEqual(result.tools["gitleaks"].status, "error")
         self.assertEqual(result.tools["pytest"].status, "not_run")
-
-    def test_watch_changes_with_commit(self):
-        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(head_sha="c" * 40), "m"))
-        self.assertEqual(fingerprint(context(), "m"), fingerprint(context(), "m"))
-
-    def test_watch_changes_with_ticket(self):
-        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(ticket_description="Nouveau besoin"), "m"))
 
 
 if __name__ == "__main__":
