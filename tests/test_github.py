@@ -63,29 +63,34 @@ class GitHubTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             journal = Path(tmp) / "publication.json"
             publish(run(context(), DemoModel()), op, github, journal)
-            self.assertEqual(json.loads(journal.read_text())["github"], "sent")
+            self.assertEqual(json.loads(journal.read_text(encoding="utf-8"))["github"], "sent")
 
 
 class ArtifactTests(unittest.TestCase):
     def test_valid_evidence_for_exact_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"
-            path.write_text(clean_evidence().model_dump_json())
+            path.write_text(clean_evidence().model_dump_json(), encoding="utf-8")
             self.assertEqual(read_evidence(path, "a" * 40).head_sha, "a" * 40)
 
     def test_wrong_commit_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"
-            path.write_text(clean_evidence().model_dump_json())
+            path.write_text(clean_evidence().model_dump_json(), encoding="utf-8")
             with self.assertRaises(ValueError):
                 read_evidence(path, "b" * 40)
 
     def test_symlink_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"
-            path.write_text(clean_evidence().model_dump_json())
+            path.write_text(clean_evidence().model_dump_json(), encoding="utf-8")
             link = Path(tmp) / "link.json"
-            link.symlink_to(path)
+            try:
+                link.symlink_to(path)
+            except OSError as exc:
+                if getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("Windows symlink creation requires Developer Mode or elevated privileges")
+                raise
             with self.assertRaises(ValueError):
                 read_evidence(link)
 
@@ -99,7 +104,7 @@ class ArtifactTests(unittest.TestCase):
     def test_invalid_schema_does_not_echo_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"
-            path.write_text('{"secret":"do-not-print-this"}')
+            path.write_text('{"secret":"do-not-print-this"}', encoding="utf-8")
             with self.assertRaises(ValueError) as exc:
                 read_evidence(path)
             self.assertNotIn("do-not-print-this", str(exc.exception))

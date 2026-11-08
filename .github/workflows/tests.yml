@@ -1,6 +1,7 @@
 name: Tests du robot
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -25,4 +26,4 @@ jobs:
       - name: Exécuter les tests unitaires
         run: python -m unittest discover -s tests -v
       - name: Vérifier la démonstration
-        run: python -m review.cli demo --out /tmp/review-demo
+        run: python -m review.cli demo --out "${{ runner.temp }}/review-demo"

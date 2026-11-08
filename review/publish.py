@@ -7,7 +7,7 @@ from .report import publication_text
 def publish(review, op, git, journal: Path):
     if review.demo:
         raise ValueError("La publication d'une simulation est interdite")
-    state = json.loads(journal.read_text()) if journal.exists() else {}
+    state = json.loads(journal.read_text(encoding="utf-8")) if journal.exists() else {}
     if state.get("run_id", review.run_id) != review.run_id:
         raise ValueError("Journal de publication associé à une autre revue")
     if state.get("github") == state.get("openproject") == "sent":

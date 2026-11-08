@@ -93,10 +93,10 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dest = save(run(context(demo=True), DemoModel()), root)
-            self.assertIn("DÉMONSTRATION", (dest / "report.md").read_text())
-            self.assertEqual(len(json.loads((dest / "review.json").read_text())["results"]), 7)
+            self.assertIn("DÉMONSTRATION", (dest / "report.md").read_text(encoding="utf-8"))
+            self.assertEqual(len(json.loads((dest / "review.json").read_text(encoding="utf-8"))["results"]), 7)
             export_csv(root, root / "history.csv")
-            self.assertIn("team/calculator", (root / "history.csv").read_text())
+            self.assertIn("team/calculator", (root / "history.csv").read_text(encoding="utf-8"))
 
 
 class ConnectorTests(unittest.TestCase):

@@ -55,7 +55,7 @@ def main():
                 print("Rapport enregistré mais au moins un agent a échoué.")
                 return 2
         elif args.command == "publish":
-            report = Review.model_validate_json(args.report.read_text())
+            report = Review.model_validate_json(args.report.read_text(encoding="utf-8"))
             op, git = clients()
             publish(report, op, git, args.report.parent / "publication.json")
             print("Commentaires de synthèse publiés dans GitHub et OpenProject.")

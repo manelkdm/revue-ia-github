@@ -40,11 +40,11 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     key = hashlib.sha256(f"{args.repo}:{args.pr}:{args.ticket}".encode()).hexdigest()[:16]
     state_path = args.out / f"watch-{key}.json"
-    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     try:
         while True:
             try:
-                standards = args.standards.read_text() if args.standards else ""
+                standards = args.standards.read_text(encoding="utf-8") if args.standards else ""
                 ctx = fetch_context(op, git, args.ticket, args.repo, args.pr, standards)
                 if args.evidence and args.evidence.exists():
                     evidence = read_evidence(args.evidence)
