@@ -44,6 +44,8 @@ jobs:
         run: |
           test "$(git -C target rev-parse HEAD)" = "$PR_HEAD_SHA"
           mkdir -p runner-output
+          # Container drops DAC override; allow it to write the dedicated output volume.
+          chmod 0777 runner-output
           docker run --rm --network=none --read-only \
             --cap-drop=ALL --security-opt=no-new-privileges \
             --pids-limit=256 --memory=4g --cpus=2 \

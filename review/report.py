@@ -6,9 +6,9 @@ from .security import safe_markdown as safe
 
 
 def markdown(review):
-    lines = ["# Rapport de revue de code", "", f"Exécution : `{review.run_id}`", "",
-        f"Dépôt : {safe(review.repository)} · PR {review.pr} · Issue {review.issue_id}", "",
-        f"Commit analysé : `{review.head_sha}`", "",
+    lines = ["# Rapport de revue de code", "", f"Exécution : \`{review.run_id}\`", "",
+        f"Dépôt : {safe(review.repository)} · PR {review.pr} · GitHub Issue #{review.issue_id}", "",
+        f"Commit analysé : \`{review.head_sha}\`", "",
         f"**Recommandation : {review.decision}**", "",
         "Une personne doit vérifier les preuves et prendre la décision finale. Aucune fusion automatique.", ""]
     if review.demo:
@@ -40,7 +40,7 @@ def save(review, root: Path):
     (dest / "review.json").write_text(review.model_dump_json(indent=2), encoding="utf-8")
     (dest / "report.md").write_text(markdown(review), encoding="utf-8")
     with sqlite3.connect(root / "history.sqlite3") as db:
-        db.execute("CREATE TABLE IF NOT EXISTS reviews (run_id TEXT PRIMARY KEY, created_at TEXT, repository TEXT, pr INTEGER, issue INTEGER, head_sha TEXT, decision TEXT, demo INTEGER)")
+        db.execute("CREATE TABLE IF NOT EXISTS reviews (run_id TEXT PRIMARY KEY, created_at TEXT, repository TEXT, pr INTEGER, ticket INTEGER, head_sha TEXT, decision TEXT, demo INTEGER)")
         db.execute("INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?)", (review.run_id, review.created_at, review.repository, review.pr, review.issue_id, review.head_sha, review.decision, int(review.demo)))
     return dest
 
@@ -57,9 +57,20 @@ def export_csv(root: Path, output: Path):
 
 
 def publication_text(review):
-    # Résumé borné : le rapport détaillé reste local, pas de faux lien public.
-    marker = f"Revue-IA {review.run_id}"
-    return "\n".join([f"## {marker}", "", f"Commit : `{review.head_sha}`", "",
-        f"Recommandation : **{review.decision}**", "", "Validation humaine obligatoire.", ""]
-        + ["- " + safe(x) for x in review.reasons[:20]]
-        + ["", "Le rapport détaillé est disponible auprès de l'opérateur de la revue."])
+    from .connectors import COMMENT_MARKER
+    lines = [
+        COMMENT_MARKER, "## Revue IA — sept agents", "",
+        f"GitHub Issue : #{review.issue_id} · Commit : \`{review.head_sha}\`", "",
+        f"**Recommandation : {review.decision}**", "",
+        "Validation humaine obligatoire. Aucune fusion automatique.", "",
+    ]
+    if review.demo:
+        lines += ["**Simulation sans modèle réel.**", ""]
+    lines += ["### Motifs", ""] + ["- " + safe(x) for x in review.reasons[:12]]
+    lines += ["", "### Agents", ""]
+    for result in review.results:
+        lines.append(f"- **Agent {result.agent}** : {result.status} — {safe(result.summary[:250])}")
+        for finding in result.findings[:3]:
+            lines.append(f"  - {finding.severity} : {safe(finding.title)} ({safe(finding.file or 'fichier non précisé')})")
+    lines += ["", "Le rapport complet (Markdown et JSON) est disponible dans les artefacts de cette exécution GitHub Actions."]
+    return "\n".join(lines)[:55_000]

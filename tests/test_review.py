@@ -9,7 +9,7 @@ from review.llm import DemoModel, Ollama
 from review.orchestrator import run
 from review.agents.agent7_synthesis import recommendation
 from review.agents.agent4_compliance import run as compliance
-from review.connectors import OpenProject, GitHub, fetch_context, repo_path
+from review.connectors import GitHub, fetch_context, repo_path, linked_issue
 from review.http import Client, NoRedirect
 from review.publish import publish
 from review.report import save, export_csv
@@ -17,7 +17,7 @@ from review.security import redact, safe_markdown
 
 
 def context(**overrides):
-    return Context(**{**dict(ticket_id=42, ticket_subject="Division", ticket_description="CA-1 division sûre", ticket_updated_at="2026-10-04T00:00:00Z", repository="team/calculator", pr=1, head_sha="a" * 40, base_sha="b" * 40, pr_title="Division", diff="+ return a / b"), **overrides})
+    return Context(**{**dict(issue_id=42, issue_subject="Division", issue_description="CA-1 division sûre", issue_updated_at="2026-10-04T00:00:00Z", repository="team/calculator", pr=1, head_sha="a" * 40, base_sha="b" * 40, pr_title="Division", diff="+ return a / b"), **overrides})
 
 
 def clean_evidence(**overrides):
@@ -101,36 +101,32 @@ class PipelineTests(unittest.TestCase):
 
 class ConnectorTests(unittest.TestCase):
     def clients(self):
-        op, git = Mock(), Mock()
-        op.ticket.return_value = {"subject": "Ticket", "description": {"raw": "CA-1"}, "updatedAt": "2026-10-04T00:00:00Z"}
-        git.pull.return_value = {"state": "open", "merged": False, "head": {"sha": "a" * 40}, "base": {"sha": "b" * 40}, "title": "PR"}
+        git = Mock()
+        git.issue.return_value = {"title": "Ticket", "body": "CA-1", "updated_at": "2026-10-04T00:00:00Z"}
+        git.pull.return_value = {"state": "open", "merged": False, "head": {"sha": "a" * 40}, "base": {"sha": "b" * 40}, "title": "PR", "body": "Closes #42"}
         git.diff.return_value = "+ changed"
-        return op, git
+        return git
 
     def test_fetch_stable(self):
-        op, git = self.clients()
-        ctx = fetch_context(op, git, 42, "team/calculator", 1)
+        git = self.clients()
+        ctx = fetch_context(git, "team/calculator", 1, 42)
         self.assertEqual(ctx.head_sha, "a" * 40)
         self.assertTrue(ctx.warnings)
 
     def test_changed_head_during_fetch(self):
-        op, git = self.clients()
+        git = self.clients()
         first = git.pull.return_value
         git.pull.side_effect = [first, {**first, "head": {"sha": "c" * 40}}]
         with self.assertRaisesRegex(ValueError, "changé"):
-            fetch_context(op, git, 42, "team/calculator", 1)
+            fetch_context(git, "team/calculator", 1, 42)
 
     def test_big_diff_refused(self):
-        op, git = self.clients()
+        git = self.clients()
         git.diff.return_value = "x" * 45001
         with self.assertRaisesRegex(ValueError, "45 000"):
-            fetch_context(op, git, 42, "team/calculator", 1)
+            fetch_context(git, "team/calculator", 1, 42)
 
     def test_api_paths_and_payloads(self):
-        op = OpenProject("http://localhost:8080", "fake-token")
-        op.http = Mock()
-        op.comment(42, "résumé")
-        op.http.request.assert_called_once_with("POST", "/api/v3/work_packages/42/activities", {"comment": {"raw": "résumé"}})
         git = GitHub("https://api.github.com", "fake-token")
         git.http = Mock()
         git.diff("team/repo", 2)
@@ -149,39 +145,39 @@ class ConnectorTests(unittest.TestCase):
         self.assertIsNone(NoRedirect().redirect_request(None, None, 302, "", {}, "https://example.org"))
 
     def test_demo_publish_refused(self):
-        op, git = self.clients()
+        git = self.clients()
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "simulation"):
-            publish(run(context(demo=True), DemoModel()), op, git, Path(tmp) / "pub.json")
-        git.comment.assert_not_called()
+            publish(run(context(demo=True), DemoModel()), git, Path(tmp) / "pub.json")
+        git.review_comment.assert_not_called()
 
     def test_publish_once(self):
-        op, git = self.clients()
+        git = self.clients()
         with tempfile.TemporaryDirectory() as tmp:
             journal = Path(tmp) / "pub.json"
             review = run(context(), DemoModel())
-            publish(review, op, git, journal)
-            publish(review, op, git, journal)
-            git.comment.assert_called_once()
-            op.comment.assert_called_once()
+            publish(review, git, journal)
+            publish(review, git, journal)
+            git.review_comment.assert_called_once()
+            git.issue.assert_called()
 
     def test_stale_base_not_published(self):
-        op, git = self.clients()
+        git = self.clients()
         git.pull.return_value["base"]["sha"] = "c" * 40
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "commits"):
-            publish(run(context(), DemoModel()), op, git, Path(tmp) / "pub.json")
-        git.comment.assert_not_called()
+            publish(run(context(), DemoModel()), git, Path(tmp) / "pub.json")
+        git.review_comment.assert_not_called()
 
     def test_uncertain_send_not_repeated(self):
-        op, git = self.clients()
-        git.comment.side_effect = TimeoutError()
+        git = self.clients()
+        git.review_comment.side_effect = TimeoutError()
         with tempfile.TemporaryDirectory() as tmp:
             journal = Path(tmp) / "pub.json"
             review = run(context(), DemoModel())
             with self.assertRaises(TimeoutError):
-                publish(review, op, git, journal)
+                publish(review, git, journal)
             with self.assertRaisesRegex(ValueError, "incertain"):
-                publish(review, op, git, journal)
-        self.assertEqual(git.comment.call_count, 1)
+                publish(review, git, journal)
+        self.assertEqual(git.review_comment.call_count, 1)
 
 
 class ModelTests(unittest.TestCase):
