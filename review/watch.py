@@ -1,4 +1,4 @@
-"""Surveillance facultative d'une seule association ticket/PR, par interrogation API."""
+"""Surveillance facultative d'une seule association issue/PR, par interrogation API."""
 import argparse
 import hashlib
 import json
@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import time
 from .cli import clients
-from .config import load_env, required
+from .config import required
 from .connectors import fetch_context
 from .llm import Ollama
 from .ci import read_evidence
@@ -22,7 +22,7 @@ def fingerprint(context, model_name):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--ticket", type=int, required=True)
+    p.add_argument("--issue", type=int, required=True)
     p.add_argument("--repo", required=True)
     p.add_argument("--pr", type=int, required=True)
     p.add_argument("--evidence", type=Path)
@@ -34,18 +34,17 @@ def main():
     args = p.parse_args()
     if args.interval < 30:
         p.error("L'intervalle minimal est de 30 secondes")
-    load_env()
-    op, git = clients()
+    git = clients()
     model = Ollama(required("OLLAMA_URL"), required("OLLAMA_MODEL"), int(os.getenv("OLLAMA_TIMEOUT", "300")))
     args.out.mkdir(parents=True, exist_ok=True)
-    key = hashlib.sha256(f"{args.repo}:{args.pr}:{args.ticket}".encode()).hexdigest()[:16]
+    key = hashlib.sha256(f"{args.repo}:{args.pr}:{args.issue}".encode()).hexdigest()[:16]
     state_path = args.out / f"watch-{key}.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     try:
         while True:
             try:
                 standards = args.standards.read_text() if args.standards else ""
-                ctx = fetch_context(op, git, args.ticket, args.repo, args.pr, standards)
+                ctx = fetch_context(git, args.issue, args.repo, args.pr, standards)
                 if args.evidence and args.evidence.exists():
                     evidence = read_evidence(args.evidence)
                     if evidence.head_sha == ctx.head_sha:
@@ -62,13 +61,7 @@ def main():
                         state = {"digest": digest, "run_id": report.run_id}
                         state_path.write_text(json.dumps(state), encoding="utf-8")
                         if args.publish:
-                            publish(report, op, git, dest / "publication.json")
-                            # Notre commentaire peut modifier updatedAt. Absorber seulement notre propre écriture.
-                            fresh = op.ticket(args.ticket)
-                            if fresh["subject"] == ctx.ticket_subject and (fresh.get("description", {}).get("raw") or "") == ctx.ticket_description:
-                                ctx.ticket_updated_at = fresh["updatedAt"]
-                                state["digest"] = fingerprint(ctx, model.name)
-                                state_path.write_text(json.dumps(state), encoding="utf-8")
+                            publish(report, git, dest / "publication.json")
                     else:
                         print("Analyse incomplète ; une nouvelle tentative aura lieu au prochain cycle.", flush=True)
                         if args.once:

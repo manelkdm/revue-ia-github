@@ -25,8 +25,8 @@ def run(context: Context, model) -> Review:
     results = [AgentResult.model_validate(sanitize(r.model_dump())) for r in results]
     decision, reasons = a7.recommendation(context, results)
     return Review(run_id=uuid4().hex, created_at=datetime.now(timezone.utc).isoformat(),
-        model=model.name, demo=context.demo, ticket_id=context.ticket_id,
-        ticket_updated_at=context.ticket_updated_at, repository=context.repository, pr=context.pr,
+        model=model.name, demo=context.demo, issue_id=context.issue_id,
+        issue_updated_at=context.issue_updated_at, repository=context.repository, pr=context.pr,
         head_sha=context.head_sha, base_sha=context.base_sha,
         input_digest=hashlib.sha256(original.encode()).hexdigest(), results=results,
         decision=decision, reasons=reasons, tools=context.evidence.tools if context.evidence else {},

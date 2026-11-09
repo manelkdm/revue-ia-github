@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "revue-ia-github"
 version = "0.2.0"
-description = "Prototype de revue de code avec OpenProject, GitHub et sept agents locaux"
+description = "Revue de code GitHub avec sept agents et Ollama"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2.11,<3"]
 

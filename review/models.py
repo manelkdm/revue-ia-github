@@ -57,10 +57,10 @@ class Evidence(StrictModel):
 
 
 class Context(StrictModel):
-    ticket_id: int = Field(gt=0)
-    ticket_subject: str
-    ticket_description: str
-    ticket_updated_at: str
+    issue_id: int = Field(gt=0)
+    issue_subject: str
+    issue_description: str
+    issue_updated_at: str
     repository: str
     pr: int = Field(gt=0)
     head_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -74,14 +74,14 @@ class Context(StrictModel):
 
 
 class Review(StrictModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     forge: Literal["github"] = "github"
     run_id: str
     created_at: str
     model: str
     demo: bool
-    ticket_id: int
-    ticket_updated_at: str
+    issue_id: int
+    issue_updated_at: str
     repository: str
     pr: int
     head_sha: str

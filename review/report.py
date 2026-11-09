@@ -7,7 +7,7 @@ from .security import safe_markdown as safe
 
 def markdown(review):
     lines = ["# Rapport de revue de code", "", f"Exécution : `{review.run_id}`", "",
-        f"Dépôt : {safe(review.repository)} · PR {review.pr} · OpenProject {review.ticket_id}", "",
+        f"Dépôt : {safe(review.repository)} · PR {review.pr} · Issue {review.issue_id}", "",
         f"Commit analysé : `{review.head_sha}`", "",
         f"**Recommandation : {review.decision}**", "",
         "Une personne doit vérifier les preuves et prendre la décision finale. Aucune fusion automatique.", ""]
@@ -40,8 +40,8 @@ def save(review, root: Path):
     (dest / "review.json").write_text(review.model_dump_json(indent=2), encoding="utf-8")
     (dest / "report.md").write_text(markdown(review), encoding="utf-8")
     with sqlite3.connect(root / "history.sqlite3") as db:
-        db.execute("CREATE TABLE IF NOT EXISTS reviews (run_id TEXT PRIMARY KEY, created_at TEXT, repository TEXT, pr INTEGER, ticket INTEGER, head_sha TEXT, decision TEXT, demo INTEGER)")
-        db.execute("INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?)", (review.run_id, review.created_at, review.repository, review.pr, review.ticket_id, review.head_sha, review.decision, int(review.demo)))
+        db.execute("CREATE TABLE IF NOT EXISTS reviews (run_id TEXT PRIMARY KEY, created_at TEXT, repository TEXT, pr INTEGER, issue INTEGER, head_sha TEXT, decision TEXT, demo INTEGER)")
+        db.execute("INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?)", (review.run_id, review.created_at, review.repository, review.pr, review.issue_id, review.head_sha, review.decision, int(review.demo)))
     return dest
 
 
