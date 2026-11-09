@@ -8,4 +8,4 @@ def run(context, model):
         "Chaque critère cite un passage exact de l'issue GitHub dans evidence et reste unknown. "
         "N'invente pas de besoin. Signale les ambiguïtés et contraintes. "
         "Si l'issue ne contient pas de critère vérifiable, laisse criteria vide.",
-        {"subject": context.ticket_subject, "description": context.ticket_description})
+        {"subject": context.issue_subject, "description": context.issue_description})
