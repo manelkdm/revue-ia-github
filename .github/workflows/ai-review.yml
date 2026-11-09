@@ -1,0 +1,128 @@
+name: Revue IA (sept agents)
+
+on:
+  workflow_run:
+    workflows: ["Preuves de la Pull Request"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Locate same-repository PR and matching evidence
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+          PRS_JSON: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr="$(jq -r '.[0].number // empty' <<< "$PRS_JSON")"
+          if [[ -z "$pr" ]]; then
+            echo "No PR associated with workflow; skipping."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          data="$(gh api "repos/$REPO/pulls/$pr")"
+          head_repo="$(jq -r '.head.repo.full_name // empty' <<< "$data")"
+          sha="$(jq -r '.head.sha' <<< "$data")"
+          state="$(jq -r '.state' <<< "$data")"
+          if [[ "$head_repo" != "$REPO" || "$state" != "open" ]]; then
+            echo "Only open same-repository PRs are reviewed."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          artifact="review-evidence-$sha"
+          artifact_id="$(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/artifacts" --jq ".artifacts[] | select(.name == \"$artifact\" and .expired == false) | .id" | head -n 1)"
+          if [[ -z "$artifact_id" ]]; then
+            echo "No evidence artifact for the current head SHA."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Download evidence from completed run
+        if: steps.target.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ARTIFACT: ${{ steps.target.outputs.artifact }}
+        run: |
+          mkdir -p evidence
+          gh run download "$RUN_ID" --name "$ARTIFACT" --dir evidence
+          test -f evidence/evidence.json
+
+      - uses: actions/setup-python@v5
+        if: steps.target.outputs.eligible == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install trusted reviewer
+        if: steps.target.outputs.eligible == 'true'
+        run: python -m pip install .
+
+      - name: Verify evidence SHA
+        if: steps.target.outputs.eligible == 'true'
+        env:
+          HEAD_SHA: ${{ steps.target.outputs.sha }}
+        run: python -m review.ci normalize --input evidence/evidence.json --head "$HEAD_SHA" --output evidence/verified.json
+
+      - name: Start Ollama on the temporary runner
+        if: steps.target.outputs.eligible == 'true'
+        env:
+          OLLAMA_MODEL: ${{ vars.REVIEW_OLLAMA_MODEL || 'qwen2.5-coder:1.5b' }}
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:11434/api/tags >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+
+      - name: Run seven agents and publish PR summary
+        if: steps.target.outputs.eligible == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          OLLAMA_MODEL: ${{ vars.REVIEW_OLLAMA_MODEL || 'qwen2.5-coder:1.5b' }}
+          OLLAMA_TIMEOUT: '480'
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+        run: |
+          args=(--pr "$PR_NUMBER" --evidence evidence/verified.json --out runs --publish)
+          if [[ -f examples/STANDARDS.md ]]; then
+            args+=(--standards examples/STANDARDS.md)
+          fi
+          python -m review.cli review "${args[@]}"
+
+      - name: Upload full review
+        if: always() && steps.target.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: seven-agent-review-${{ steps.target.outputs.sha }}
+          path: runs/
+          if-no-files-found: warn
+          retention-days: 14
