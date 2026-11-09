@@ -60,8 +60,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(head_sha="c" * 40), "m"))
         self.assertEqual(fingerprint(context(), "m"), fingerprint(context(), "m"))
 
-    def test_watch_changes_with_ticket(self):
-        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(ticket_description="Nouveau besoin"), "m"))
+    def test_watch_changes_with_issue(self):
+        self.assertNotEqual(fingerprint(context(), "m"), fingerprint(context(issue_description="Nouveau besoin"), "m"))
 
 
 if __name__ == "__main__":
